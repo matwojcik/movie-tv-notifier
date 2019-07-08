@@ -20,6 +20,7 @@ val compilerPlugins = Seq(
   addCompilerPlugin("com.softwaremill.clippy" %% "plugin" % "0.6.1" classifier "bundle"),
   addCompilerPlugin( "org.typelevel" %% "kind-projector" % "0.10.3"),
   addCompilerPlugin(("org.scalameta" % "paradise" % "3.0.0-M11").cross(CrossVersion.full)),
+  addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.0")
 )
 
 lazy val compilerOptions =
@@ -39,6 +40,7 @@ lazy val compilerOptions =
 
 lazy val dependencies = {
   val SttpVersion = "1.6.0"
+  val CirceVersion = "0.11.1"
 
   val cats = Seq(
     "org.typelevel" %% "cats-core" % "1.6.1",
@@ -70,10 +72,20 @@ lazy val dependencies = {
     "com.softwaremill.sttp" %% "core" % SttpVersion,
     "com.softwaremill.sttp" %% "cats" % SttpVersion,
     "com.softwaremill.sttp" %% "async-http-client-backend-zio" % SttpVersion,
+    "com.softwaremill.sttp" %% "async-http-client-backend-cats" % SttpVersion,
+  )
+
+  val circe = Seq(
+    "io.circe" %% "circe-generic" % CirceVersion exclude ("aopalliance", "aopalliance"),
+    "io.circe" %% "circe-parser" % CirceVersion
+  )
+  
+  val others = Seq(
+    "commons-codec" % "commons-codec" % "1.12"
   )
 
   Seq(
-    libraryDependencies ++= cats ++ config ++ logging ++ http4s ++ sttp
+    libraryDependencies ++= cats ++ config ++ logging ++ http4s ++ sttp ++ others ++ circe
   )
 }
 
