@@ -1,19 +1,21 @@
 package matwojcik.movies.filmweb
 
+import java.time.{LocalDate, LocalDateTime, LocalTime, Year}
+import java.time.format.DateTimeFormatter
+
 import cats.effect.Sync
 import cats.instances.all._
 import cats.syntax.all._
 import io.circe.Json
-import matwojcik.movies.filmweb.domain.Channel
-import matwojcik.movies.filmweb.domain.Movie
-import matwojcik.movies.filmweb.domain.TvSchedule
+import matwojcik.movies.filmweb.domain.{Channel, Movie, TvSchedule, User}
 
 import scala.util.Success
 import scala.util.Try
 
 trait Filmweb[F[_]] {
   def findMovie(id: Movie.Id): F[Movie]
-  def findTvSchedule(id: Channel.Id): F[List[TvSchedule]]
+  def findTvSchedule(id: Channel.Id, date: LocalDate): F[List[TvSchedule]]
+  def findMoviesWatchList(id: User.Id): F[String]
 }
 
 object Filmweb {
@@ -23,28 +25,33 @@ object Filmweb {
     override def findMovie(id: Movie.Id): F[Movie] =
       client.runMethod("getFilmInfoFull", List(id.value.toString))(parseMovie)
 
-    override def findTvSchedule(id: Channel.Id): F[List[TvSchedule]] =
-      client.runMethod("getTvSchedule", List(id.value.toString, "2019-07-10"))(parseSchedules)
+    override def findTvSchedule(id: Channel.Id, localDate: LocalDate): F[List[TvSchedule]] =
+      client.runMethod("getTvSchedule", List(id.value.toString, localDate.format(DateTimeFormatter.ISO_DATE)))(parseSchedules(localDate))
+
+    override def findMoviesWatchList(id: User.Id): F[String] =
+      client.runMethod("getUserFilmsWantToSee", List(id.value.toString, "1", "1000"))(_.mkString(":::").pure[F])
 
     private def parseMovie(v: Vector[Json]): F[Movie] = {
       val title = Try(v(0)).map(_.as[String]).flatMap(_.toTry)
       val rating = Try(v(2)).map(_.as[Double]).flatMap(_.toTry)
-      (title, rating).bisequence match {
-        case Success(values) =>
+      val voteCount = Try(v(3)).map(_.as[Int]).flatMap(_.toTry)
+      val plot = Try(v(19)).map(_.as[Option[String]]).flatMap(_.toTry)
+      val year = Try(v(5)).map(_.as[Int].map(Year.of)).flatMap(_.toTry)
+      (title, year, plot, rating, voteCount).mapN {
+        case values =>
           (Movie.apply _).tupled(values).pure[F]
-        case _ => Sync[F].raiseError(new RuntimeException("Incorrect type"))
-      }
+      }.getOrElse(Sync[F].raiseError(new RuntimeException("Incorrect type")))
     }
 
-    private def parseSchedules(v: Vector[Json]): F[List[TvSchedule]] =
+    private def parseSchedules(date: LocalDate)(v: Vector[Json]): F[List[TvSchedule]] =
       v.traverse {
-        _.asArray.map(parseSchedule).getOrElse(Sync[F].raiseError(new RuntimeException("Incorrect type")))
+        _.asArray.map(parseSchedule(date)).getOrElse(Sync[F].raiseError(new RuntimeException("Incorrect type")))
       }.map(_.toList)
 
-    private def parseSchedule(v: Vector[Json]): F[TvSchedule] = {
+    private def parseSchedule(date: LocalDate)(v: Vector[Json]): F[TvSchedule] = {
       val title = Try(v(1)).map(_.as[String]).flatMap(_.toTry)
       val description = Try(v(2)).map(_.as[String]).flatMap(_.toTry)
-      val start = Try(v(3)).map(_.as[String]).flatMap(_.toTry)
+      val start = Try(v(3)).map(_.as[String].map(LocalTime.parse(_, DateTimeFormatter.ofPattern("k:mm"))).map(LocalDateTime.of(date, _))).flatMap(_.toTry)
       val id = Try(v(5)).map(_.as[Option[Int]].map(_.map(Movie.Id))).flatMap(_.toTry)
 
       (id, title, description, start).mapN {

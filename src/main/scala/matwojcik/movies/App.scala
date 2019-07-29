@@ -2,6 +2,7 @@ package matwojcik.movies
 
 import java.util.concurrent.Executors
 
+import cats.Parallel
 import cats.effect.Async
 import cats.effect.ConcurrentEffect
 import cats.effect.ContextShift
@@ -20,6 +21,7 @@ import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import matwojcik.movies.filmweb.Filmweb
 import matwojcik.movies.filmweb.FilmwebClient
 import matwojcik.movies.filmweb.FilmwebConfig
+import matwojcik.movies.recommendation.{RecommendationRouter, Recommendations}
 import org.http4s.HttpRoutes
 import org.http4s.implicits._
 import org.http4s.server.Router
@@ -35,22 +37,23 @@ object App extends IOApp with StrictLogging {
 
   val config = FilmwebConfig("https://ssl.filmweb.pl/api", "apikey")
 
-  override def run(args: List[String]): IO[ExitCode] = program[IO].as(ExitCode.Success)
+  override def run(args: List[String]): IO[ExitCode] = program[IO, IO.Par].as(ExitCode.Success)
 
-  def program[F[_]: Async: ConcurrentEffect: Timer: ContextShift]: F[Unit] =
-    appResource[F].use(_ => Async[F].never[Unit])
+  def program[F[_]: Async: ConcurrentEffect: Timer: ContextShift, G[_]](implicit P: Parallel[F,G]): F[Unit] =
+    appResource[F,G].use(_ => Async[F].never[Unit])
 
-  private def appResource[F[_]: Sync: ConcurrentEffect: Timer: ContextShift]: Resource[F, Unit] =
+  private def appResource[F[_]: Sync: ConcurrentEffect: Timer: ContextShift, G[_]](implicit P: Parallel[F,G]): Resource[F, Unit] =
     for {
       sttpBackend <- Resource.make(Sync[F].delay(AsyncHttpClientCatsBackend[F]()))(backend => Sync[F].delay(backend.close()))
       service     <- Resource.liftF(service(sttpBackend))
       _           <- server[F](service)
     } yield ()
 
-  private def service[F[_]: Sync](sttpBackend: SttpBackend[F, Nothing]) =
+  private def service[F[_]: Sync, G[_]](sttpBackend: SttpBackend[F, Nothing])(implicit P: Parallel[F,G]) =
     for {
       implicit0(filmweb: Filmweb[F]) <- Filmweb.instance[F](new FilmwebClient[F](config, sttpBackend)).pure[F]
-    } yield new MoviesRouter[F].service
+      implicit0(recommendations: Recommendations[F]) <- Recommendations.instance[F,G].pure[F]
+    } yield new MoviesRouter[F].service <+> new RecommendationRouter[F].service
 
   private def server[F[_]: Sync: ConcurrentEffect: Timer](routes: HttpRoutes[F]): Resource[F, Server[F]] =
     BlazeServerBuilder[F]
