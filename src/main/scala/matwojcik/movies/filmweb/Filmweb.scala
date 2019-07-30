@@ -16,6 +16,7 @@ trait Filmweb[F[_]] {
   def findMovie(id: Movie.Id): F[Movie]
   def findTvSchedule(id: Channel.Id, date: LocalDate): F[List[TvSchedule]]
   def findMoviesWatchList(id: User.Id): F[String]
+  def findAllChannels(): F[List[Channel]]
 }
 
 object Filmweb {
@@ -31,6 +32,9 @@ object Filmweb {
     override def findMoviesWatchList(id: User.Id): F[String] =
       client.runMethod("getUserFilmsWantToSee", List(id.value.toString, "1", "1000"))(_.mkString(":::").pure[F])
 
+    override def findAllChannels(): F[List[Channel]] =
+      client.runMethod("getAllChannels", List("\"\""))(parseChannels)
+
     private def parseMovie(v: Vector[Json]): F[Movie] = {
       val title = Try(v(0)).map(_.as[String]).flatMap(_.toTry)
       val rating = Try(v(2)).map(_.as[Double]).flatMap(_.toTry)
@@ -40,7 +44,7 @@ object Filmweb {
       (title, year, plot, rating, voteCount).mapN {
         case values =>
           (Movie.apply _).tupled(values).pure[F]
-      }.getOrElse(Sync[F].raiseError(new RuntimeException("Incorrect type")))
+      }.getOrElse(Sync[F].raiseError(new RuntimeException(s"Incorrect type: $v")))
     }
 
     private def parseSchedules(date: LocalDate)(v: Vector[Json]): F[List[TvSchedule]] =
@@ -56,8 +60,24 @@ object Filmweb {
 
       (id, title, description, start).mapN {
         case values => (TvSchedule.apply _).tupled(values).pure[F]
-      }.getOrElse(Sync[F].raiseError(new RuntimeException("Incorrect type")))
+      }.getOrElse(Sync[F].raiseError(new RuntimeException(s"Incorrect type: $v")))
 
     }
+
+
+    private def parseChannels(v: Vector[Json]): F[List[Channel]] =
+      v.tail.traverse { v3 =>
+        v3.asArray.map(parseChannel).getOrElse(Sync[F].raiseError(new RuntimeException(s"Incorrect type: $v3")))
+      }.map(_.toList)
+
+    private def parseChannel(v: Vector[Json]): F[Channel] = {
+      val id = Try(v(0)).map(_.as[Int].map(Channel.Id)).flatMap(_.toTry)
+      val name = Try(v(1)).map(_.as[String]).flatMap(_.toTry)
+      (id, name).mapN {
+        case values =>
+          (Channel.apply _).tupled(values).pure[F]
+      }.getOrElse(Sync[F].raiseError(new RuntimeException(s"Incorrect type: $v")))
+    }
+
   }
 }

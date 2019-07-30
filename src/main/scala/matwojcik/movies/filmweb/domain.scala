@@ -8,6 +8,9 @@ object domain {
   object Movie {
     case class Id(value: Int) extends AnyVal
   }
+
+  case class Channel(id: Channel.Id, name: String)
+
   object Channel {
     case class Id(value: Int) extends AnyVal
   }

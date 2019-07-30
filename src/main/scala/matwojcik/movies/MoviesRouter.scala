@@ -15,7 +15,9 @@ class MoviesRouter[F[_]: Sync: Filmweb] extends Http4sDsl[F] {
   val service: HttpRoutes[F] = HttpRoutes.of[F] {
     case GET -> Root / "movie" / IntVar(id) =>
       Filmweb[F].findMovie(Movie.Id(id)).map(_.toString).flatMap(Ok(_))
-    case GET -> Root / "tv" / "channel" / IntVar(id) =>
+    case GET -> Root / "tv" / "channels" =>
+      Filmweb[F].findAllChannels().map(_.toString()).flatMap(Ok(_))
+    case GET -> Root / "tv" / "channels" / IntVar(id) =>
       Filmweb[F].findTvSchedule(Channel.Id(id), LocalDate.now()).map(_.mkString(":::")).flatMap(Ok(_))
     case GET -> Root / "user" / IntVar(id) / "watchlist" =>
       Filmweb[F].findMoviesWatchList(User.Id(id)).flatMap(Ok(_))
