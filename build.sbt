@@ -83,7 +83,7 @@ lazy val dependencies = {
   val others = Seq(
     "commons-codec" % "commons-codec" % "1.12",
     "com.lihaoyi" %% "scalatags" % "0.7.0",
-    "org.simplejavamail" % "simple-java-mail" % "5.2.0"
+    "org.simplejavamail" % "simple-java-mail" % "5.2.0" exclude ("com.sun.activation", "jakarta.activation")
   )
 
   Seq(
@@ -121,6 +121,8 @@ publishArtifact in(Compile, packageDoc) := false
 assemblyMergeStrategy in assembly := {
   case PathList("javax", "jms", xs@_*) => MergeStrategy.first
   case PathList(ps@_*) if ps.last == "overview.html" => MergeStrategy.first
+  case PathList(ps@_*) if ps.last == "RELEASE.txt" => MergeStrategy.first
+  case PathList(ps@_*) if ps.last == "LICENSE-2.0.txt" => MergeStrategy.first
   case PathList(ps@_*) if ps.last endsWith ".properties" => MergeStrategy.concat
   case x if x.contains("pureconfig") => MergeStrategy.first
   case x if x.contains("netty") => MergeStrategy.last

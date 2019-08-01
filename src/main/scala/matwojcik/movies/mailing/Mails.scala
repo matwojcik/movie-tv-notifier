@@ -1,7 +1,5 @@
 package matwojcik.movies.mailing
 
-import cats.effect.IO
-import cats.effect.LiftIO
 import cats.effect.Sync
 import cats.syntax.all._
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
@@ -17,7 +15,7 @@ trait Mails[F[_]] {
 object Mails {
   def apply[F[_]](implicit ev: Mails[F]): Mails[F] = ev
 
-  def instance[F[_]: LiftIO: Sync](config: MailConfig): Mails[F] = new Mails[F] {
+  def instance[F[_]: Sync](config: MailConfig): Mails[F] = new Mails[F] {
     private val logger = Slf4jLogger.getLogger[F]
 
     private val mailer = MailerBuilder
@@ -36,7 +34,7 @@ object Mails {
         .withHTMLText(content)
         .buildEmail();
 
-      LiftIO[F].liftIO(IO(mailer.sendMail(email))) *> logger.info(s"Sent e-mail to $to")
+      Sync[F].delay(mailer.sendMail(email)) *> logger.info(s"Sent e-mail to $to")
     }
   }
 }

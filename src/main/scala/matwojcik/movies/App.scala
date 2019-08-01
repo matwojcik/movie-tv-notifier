@@ -37,15 +37,15 @@ object App extends IOApp with StrictLogging {
   def program[F[_]: Async: ConcurrentEffect: Timer: ContextShift, G[_]](implicit P: Parallel[F, G]): F[Unit] =
     appResource[F, G].use(_ => Async[F].never[Unit])
 
-  private def appResource[F[_]: Sync: ConcurrentEffect: LiftIO: Timer: ContextShift, G[_]](implicit P: Parallel[F, G]): Resource[F, Unit] =
+  private def appResource[F[_]: Sync: ConcurrentEffect: Timer: ContextShift, G[_]](implicit P: Parallel[F, G]): Resource[F, Unit] =
     for {
       sttpBackend               <- Resource.make(Sync[F].delay(AsyncHttpClientCatsBackend[F]()))(backend => Sync[F].delay(backend.close()))
-      implicit0(config: Config) <- Resource.liftF(LiftIO[F].liftIO(IO(loadConfigOrThrow[Config])))
+      implicit0(config: Config) <- Resource.liftF(Sync[F].delay(loadConfigOrThrow[Config]))
       service                   <- Resource.liftF(service(sttpBackend))
       _                         <- server[F](service)
     } yield ()
 
-  private def service[F[_]: Sync: LiftIO, G[_]](sttpBackend: SttpBackend[F, Nothing])(implicit P: Parallel[F, G], config: Config) =
+  private def service[F[_]: Sync, G[_]](sttpBackend: SttpBackend[F, Nothing])(implicit P: Parallel[F, G], config: Config) =
     for {
       implicit0(filmweb: Filmweb[F])                     <- Filmweb.instance[F](new FilmwebClient[F](config.filmweb, sttpBackend)).pure[F]
       implicit0(mails: Mails[F])                         <- Mails.instance[F](config.mail).pure[F]
