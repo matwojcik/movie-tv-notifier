@@ -37,7 +37,7 @@ object Recommendations {
         }
         interestingMovies = downloadedMovies.map {
           case (movie, schedule) => Recommendation(movie, channel, schedule.start)
-        }.filter(schedule => schedule.movie.rating > 7.2 && schedule.movie.voteCount > 5000)
+        }.filter(schedule => schedule.movie.rating > 7.2 && schedule.movie.voteCount > 10000)
       } yield interestingMovies
 
     private def filterMovies(schedule: List[TvSchedule]) =
@@ -46,13 +46,60 @@ object Recommendations {
       }
 
     private def notTvShows(program: TvSchedule) =
-      List("serial", "magazyn", "program").forall(!program.description.contains(_))
+      List("serial", "magazyn", "program").forall(w => !program.description.exists(_.contains(w)))
 
     override def findRecommendations(date: LocalDate): F[List[Recommendation]] =
       for {
-        channels        <- Filmweb[F].findAllChannels()
-        recommendations <- channels.take(100).traverse(findRecommendationsOnChannel(_, date))
+        channels        <- findChannelsOfUser
+        recommendations <- channels.parTraverse(findRecommendationsOnChannel(_, date))
       } yield recommendations.flatten
 
+
+    private def findChannelsOfUser =
+      Filmweb[F].findAllChannels().map(_.filter(
+        interestingChannels contains _.id.value
+      ))
   }
+
+  val interestingChannels = List(1,
+    2,
+    3,
+    4,
+    5,
+    8,
+    11,
+    110,
+    22,
+    98,
+    9,
+    10,
+    156,
+    32,
+    157,
+    31,
+    33,
+    53,
+    60,
+    40,
+    25,
+    109,
+    124,
+    420,
+    75,
+    74,
+    117,
+    418,
+    71,
+    29,
+    28,
+    27,
+    78,
+    361,
+    41,
+    38,
+    103,
+    64,
+    36,
+    108,
+    47)
 }

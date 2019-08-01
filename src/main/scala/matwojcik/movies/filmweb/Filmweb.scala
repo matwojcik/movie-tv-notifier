@@ -1,5 +1,6 @@
 package matwojcik.movies.filmweb
 
+import java.net.URL
 import java.time.{LocalDate, LocalDateTime, LocalTime, Year}
 import java.time.format.DateTimeFormatter
 
@@ -41,7 +42,9 @@ object Filmweb {
       val voteCount = Try(v(3)).map(_.as[Int]).flatMap(_.toTry)
       val plot = Try(v(19)).map(_.as[Option[String]]).flatMap(_.toTry)
       val year = Try(v(5)).map(_.as[Int].map(Year.of)).flatMap(_.toTry)
-      (title, year, plot, rating, voteCount).mapN {
+      val url = Try(v(8)).map(_.as[Option[String]].map(_.map(_.replace("/discussion", "")).map(new URL(_)))).flatMap(_.toTry)
+      val poster = Try(v(11)).map(_.as[Option[String]].map(_.map("http://1.fwcdn.pl/po" + _).map(new URL(_)))).flatMap(_.toTry)
+      (title, year, plot, rating, voteCount, url, poster).mapN {
         case values =>
           (Movie.apply _).tupled(values).pure[F]
       }.getOrElse(Sync[F].raiseError(new RuntimeException(s"Incorrect type: $v")))
@@ -54,8 +57,13 @@ object Filmweb {
 
     private def parseSchedule(date: LocalDate)(v: Vector[Json]): F[TvSchedule] = {
       val title = Try(v(1)).map(_.as[String]).flatMap(_.toTry)
-      val description = Try(v(2)).map(_.as[String]).flatMap(_.toTry)
-      val start = Try(v(3)).map(_.as[String].map(LocalTime.parse(_, DateTimeFormatter.ofPattern("k:mm"))).map(LocalDateTime.of(date, _))).flatMap(_.toTry)
+      val description = Try(v(2)).map(_.as[Option[String]]).flatMap(_.toTry)
+      val start = Try(v(3)).map(_.as[String].map(LocalTime.parse(_, DateTimeFormatter.ofPattern("k:mm"))).map{time =>
+        if(time.getHour > 5)
+          LocalDateTime.of(date, time)
+        else
+          LocalDateTime.of(date.plusDays(1), time)
+      }).flatMap(_.toTry)
       val id = Try(v(5)).map(_.as[Option[Int]].map(_.map(Movie.Id))).flatMap(_.toTry)
 
       (id, title, description, start).mapN {
