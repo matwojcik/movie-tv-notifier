@@ -82,7 +82,8 @@ lazy val dependencies = {
   
   val others = Seq(
     "commons-codec" % "commons-codec" % "1.12",
-    "com.lihaoyi" %% "scalatags" % "0.7.0"
+    "com.lihaoyi" %% "scalatags" % "0.7.0",
+    "org.simplejavamail" % "simple-java-mail" % "5.2.0"
   )
 
   Seq(
