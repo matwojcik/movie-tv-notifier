@@ -27,11 +27,11 @@ class RecommendationRouter[F[_]: Sync: Recommendations: RecommendationTemplating
           .flatMap(RecommendationTemplating[F].build)
           .flatMap(Ok(_, `Content-Type`(MediaType.text.html)))
       } yield result
-    case GET -> Root / "recommendations" / "send" =>
+    case POST -> Root / "recommendations" =>
       for {
         now <- currentDate
         result <- RecommendationSender[F]
-          .sendRecommendations(LocalDate.now())
+          .sendRecommendations(now)
           .flatMap(_ => Ok("Sent"))
       } yield result
   }

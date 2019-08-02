@@ -4,6 +4,7 @@ import java.net.URL
 import java.time.{LocalDateTime, Year}
 
 object domain {
+  // TODO add english title
   case class Movie(title: String, year: Year, plot: Option[String], rating: Double, voteCount: Int, url: Option[URL], poster: Option[URL])
 
   object Movie {

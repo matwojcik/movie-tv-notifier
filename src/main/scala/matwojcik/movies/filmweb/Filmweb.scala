@@ -1,22 +1,27 @@
 package matwojcik.movies.filmweb
 
 import java.net.URL
-import java.time.{LocalDate, LocalDateTime, LocalTime, Year}
 import java.time.format.DateTimeFormatter
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.Year
 
 import cats.effect.Sync
 import cats.instances.all._
 import cats.syntax.all._
+import io.circe.Decoder
 import io.circe.Json
-import matwojcik.movies.filmweb.domain.{Channel, Movie, TvSchedule, User}
+import matwojcik.movies.filmweb.FilmwebClient.Decoder.DecodingFailure
+import matwojcik.movies.filmweb.domain.Channel
+import matwojcik.movies.filmweb.domain.Movie
+import matwojcik.movies.filmweb.domain.TvSchedule
 
-import scala.util.Success
 import scala.util.Try
 
 trait Filmweb[F[_]] {
   def findMovie(id: Movie.Id): F[Movie]
   def findTvSchedule(id: Channel.Id, date: LocalDate): F[List[TvSchedule]]
-  def findMoviesWatchList(id: User.Id): F[String]
   def findAllChannels(): F[List[Channel]]
 }
 
@@ -24,68 +29,80 @@ object Filmweb {
   def apply[F[_]](implicit ev: Filmweb[F]): Filmweb[F] = ev
 
   def instance[F[_]: Sync](client: FilmwebClient[F]): Filmweb[F] = new Filmweb[F] {
+
     override def findMovie(id: Movie.Id): F[Movie] =
-      client.runMethod("getFilmInfoFull", List(id.value.toString))(parseMovie)
+      client.executeMethod[Movie]("getFilmInfoFull", List(id.value.toString))
 
-    override def findTvSchedule(id: Channel.Id, localDate: LocalDate): F[List[TvSchedule]] =
-      client.runMethod("getTvSchedule", List(id.value.toString, localDate.format(DateTimeFormatter.ISO_DATE)))(parseSchedules(localDate))
-
-    override def findMoviesWatchList(id: User.Id): F[String] =
-      client.runMethod("getUserFilmsWantToSee", List(id.value.toString, "1", "1000"))(_.mkString(":::").pure[F])
-
-    override def findAllChannels(): F[List[Channel]] =
-      client.runMethod("getAllChannels", List("\"\""))(parseChannels)
-
-    private def parseMovie(v: Vector[Json]): F[Movie] = {
-      val title = Try(v(0)).map(_.as[String]).flatMap(_.toTry)
-      val rating = Try(v(2)).map(_.as[Double]).flatMap(_.toTry)
-      val voteCount = Try(v(3)).map(_.as[Int]).flatMap(_.toTry)
-      val plot = Try(v(19)).map(_.as[Option[String]]).flatMap(_.toTry)
-      val year = Try(v(5)).map(_.as[Int].map(Year.of)).flatMap(_.toTry)
-      val url = Try(v(8)).map(_.as[Option[String]].map(_.map(_.replace("/discussion", "")).map(new URL(_)))).flatMap(_.toTry)
-      val poster = Try(v(11)).map(_.as[Option[String]].map(_.map("http://1.fwcdn.pl/po" + _).map(new URL(_)))).flatMap(_.toTry)
-      (title, year, plot, rating, voteCount, url, poster).mapN {
-        case values =>
-          (Movie.apply _).tupled(values).pure[F]
-      }.getOrElse(Sync[F].raiseError(new RuntimeException(s"Incorrect type: $v")))
+    override def findTvSchedule(id: Channel.Id, localDate: LocalDate): F[List[TvSchedule]] = {
+      implicit val decoder: FilmwebClient.Decoder[List[TvSchedule]] = schedulesDecoder(localDate)
+      client.executeMethod[List[TvSchedule]]("getTvSchedule", List(id.value.toString, localDate.format(DateTimeFormatter.ISO_DATE)))
     }
 
-    private def parseSchedules(date: LocalDate)(v: Vector[Json]): F[List[TvSchedule]] =
-      v.traverse {
-        _.asArray.map(parseSchedule(date)).getOrElse(Sync[F].raiseError(new RuntimeException("Incorrect type")))
-      }.map(_.toList)
+    override def findAllChannels(): F[List[Channel]] =
+      client.executeMethod[List[Channel]]("getAllChannels", List("\"\""))
 
-    private def parseSchedule(date: LocalDate)(v: Vector[Json]): F[TvSchedule] = {
-      val title = Try(v(1)).map(_.as[String]).flatMap(_.toTry)
-      val description = Try(v(2)).map(_.as[Option[String]]).flatMap(_.toTry)
-      val start = Try(v(3)).map(_.as[String].map(LocalTime.parse(_, DateTimeFormatter.ofPattern("k:mm"))).map{time =>
-        if(time.getHour > 5)
+    implicit val movieDecoder: FilmwebClient.Decoder[Movie] = (v: Vector[Json]) => {
+      val title = parse[String](v)(0)
+      val rating = parse[Double](v)(2)
+      val voteCount = parse[Int](v)(3)
+      val plot = parse[Option[String]](v)(19)
+      val year = parse[Int](v)(5).map(Year.of)
+      val url = parse[Option[String]](v)(8).map(_.map(_.replace("/discussion", "")).map(new URL(_)))
+      val poster = parse[Option[String]](v)(11).map(_.map("http://1.fwcdn.pl/po" + _).map(new URL(_)))
+      (title, year, plot, rating, voteCount, url, poster).mapN {
+        case values =>
+          (Movie.apply _).tupled(values)
+      }.leftMap(decodingFailure("movie", v))
+    }
+
+    implicit def schedulesDecoder(date: LocalDate): FilmwebClient.Decoder[List[TvSchedule]] =
+      (v: Vector[Json]) =>
+        v.traverse {
+          _.asArray
+            .map(parseSchedule(date))
+            .getOrElse(Left(decodingFailure("schedules", v)(new RuntimeException("Schedules not an array"))))
+        }.map(_.toList)
+
+    private def parseSchedule(date: LocalDate)(v: Vector[Json]): Either[DecodingFailure, TvSchedule] = {
+      val title = parse[String](v)(1)
+      val description = parse[Option[String]](v)(2)
+      val start = parse[String](v)(3).map(LocalTime.parse(_, DateTimeFormatter.ofPattern("k:mm"))).map { time =>
+        if (time.getHour > 5)
           LocalDateTime.of(date, time)
         else
           LocalDateTime.of(date.plusDays(1), time)
-      }).flatMap(_.toTry)
-      val id = Try(v(5)).map(_.as[Option[Int]].map(_.map(Movie.Id))).flatMap(_.toTry)
+      }
+      val id = parse[Option[Int]](v)(5).map(_.map(Movie.Id))
 
       (id, title, description, start).mapN {
-        case values => (TvSchedule.apply _).tupled(values).pure[F]
-      }.getOrElse(Sync[F].raiseError(new RuntimeException(s"Incorrect type: $v")))
+        case values => (TvSchedule.apply _).tupled(values)
+      }.leftMap(decodingFailure("schedule", v))
 
     }
 
+    implicit val channelsDecoder: FilmwebClient.Decoder[List[Channel]] = (v: Vector[Json]) =>
+      v match {
+        case head +: tail =>
+          tail.traverse { v3 =>
+            v3.asArray.map(parseChannel).getOrElse(Left(decodingFailure("channels", v)(new RuntimeException("Channels not an array"))))
+          }.map(_.toList)
+        case _ =>
+          Left(decodingFailure("channels", v)(new RuntimeException("Channels list didn't have enough elements")))
+    }
 
-    private def parseChannels(v: Vector[Json]): F[List[Channel]] =
-      v.tail.traverse { v3 =>
-        v3.asArray.map(parseChannel).getOrElse(Sync[F].raiseError(new RuntimeException(s"Incorrect type: $v3")))
-      }.map(_.toList)
-
-    private def parseChannel(v: Vector[Json]): F[Channel] = {
-      val id = Try(v(0)).map(_.as[Int].map(Channel.Id)).flatMap(_.toTry)
-      val name = Try(v(1)).map(_.as[String]).flatMap(_.toTry)
+    private def parseChannel(v: Vector[Json]): Either[DecodingFailure, Channel] = {
+      val id = parse[Int](v)(0).map(Channel.Id)
+      val name = parse[String](v)(1)
       (id, name).mapN {
         case values =>
-          (Channel.apply _).tupled(values).pure[F]
-      }.getOrElse(Sync[F].raiseError(new RuntimeException(s"Incorrect type: $v")))
+          (Channel.apply _).tupled(values)
+      }.leftMap(decodingFailure("channel", v))
     }
 
+    private def parse[A: Decoder](v: Vector[Json])(index: Int) =
+      Try(v(index)).map(_.as[A]).toEither.flatten
+
+    private def decodingFailure[A](name: String, v: Vector[Json])(cause: Throwable) =
+      new DecodingFailure(s"Error during parsing $name from $v", cause)
   }
 }
