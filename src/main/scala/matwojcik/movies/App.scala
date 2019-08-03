@@ -3,7 +3,12 @@ package matwojcik.movies
 import java.util.concurrent.Executors
 
 import cats.Parallel
-import cats.effect._
+import cats.effect.Async
+import cats.effect.ConcurrentEffect
+import cats.effect.ContextShift
+import cats.effect.Resource
+import cats.effect.Sync
+import cats.effect.Timer
 import cats.syntax.all._
 import com.softwaremill.sttp.SttpBackend
 import com.softwaremill.sttp.asynchttpclient.cats.AsyncHttpClientCatsBackend
@@ -24,15 +29,21 @@ import org.http4s.server.Router
 import org.http4s.server.Server
 import org.http4s.server.blaze.BlazeServerBuilder
 import pureconfig.loadConfigOrThrow
+import zio.interop.ParIO
+import zio.interop.catz._
+import zio.interop.catz.implicits._
+import zio.DefaultRuntime
+import zio.Task
 
 import scala.concurrent.ExecutionContext
 
-object App extends IOApp with StrictLogging {
+object App extends zio.App with StrictLogging {
 
   implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newCachedThreadPool())
   implicit def unsafeLogger[F[_]: Sync]: Logger[F] = Slf4jLogger.getLogger[F]
+  implicit val runtime: zio.Runtime[Environment] = new DefaultRuntime {}
 
-  override def run(args: List[String]): IO[ExitCode] = program[IO, IO.Par].as(ExitCode.Success)
+  override def run(args: List[String]) = program[Task, ParIO[Any, Throwable, ?]].fold(_ => 1, _ => 0)
 
   def program[F[_]: Async: ConcurrentEffect: Timer: ContextShift, G[_]](implicit P: Parallel[F, G]): F[Unit] =
     appResource[F, G].use(_ => Async[F].never[Unit])

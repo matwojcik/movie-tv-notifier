@@ -50,6 +50,11 @@ lazy val dependencies = {
     "org.typelevel" %% "cats-tagless-macros" % "0.8"
   )
 
+  val zio = Seq(
+    "dev.zio" %% "zio" % "1.0.0-RC10-1",
+    "dev.zio" %% "zio-interop-cats" % "1.3.1.0-RC3",
+  )
+
   val config = Seq(
     "com.github.pureconfig" %% "pureconfig" % "0.9.1",
   )
@@ -71,7 +76,6 @@ lazy val dependencies = {
   val sttp = Seq(
     "com.softwaremill.sttp" %% "core" % SttpVersion,
     "com.softwaremill.sttp" %% "cats" % SttpVersion,
-    "com.softwaremill.sttp" %% "async-http-client-backend-zio" % SttpVersion,
     "com.softwaremill.sttp" %% "async-http-client-backend-cats" % SttpVersion,
   )
 
@@ -87,7 +91,7 @@ lazy val dependencies = {
   )
 
   Seq(
-    libraryDependencies ++= cats ++ config ++ logging ++ http4s ++ sttp ++ others ++ circe
+    libraryDependencies ++= cats ++ config ++ logging ++ http4s ++ sttp ++ others ++ circe ++ zio
   )
 }
 
