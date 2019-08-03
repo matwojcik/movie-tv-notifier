@@ -4,21 +4,20 @@ import au.id.tmm.bfect.BifunctorMonad
 import au.id.tmm.bfect.catsinterop._
 import au.id.tmm.bfect.effects.Die._
 import au.id.tmm.bfect.effects._
-import cats.tagless.{Derive, FunctorK}
-import cats.tagless.implicits._
 import cats.syntax.all._
-import cats.~>
-import com.softwaremill.sttp.{SttpBackend, _}
-import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
+import com.softwaremill.sttp.SttpBackend
+import com.softwaremill.sttp._
 import io.circe.Json
+import matwojcik.movies.filmweb.FilmwebClient.ClientError.ThrowableToClientError
 import matwojcik.movies.filmweb.FilmwebClient.Decoder.DecodingFailure
-import matwojcik.movies.filmweb.FilmwebClient.{ClientError, Decoder, UnexpectedError}
+import matwojcik.movies.filmweb.FilmwebClient.ClientError
+import matwojcik.movies.filmweb.FilmwebClient.Decoder
+import matwojcik.movies.filmweb.FilmwebClient.UnexpectedError
+import matwojcik.movies.util.BifunctorImplicits._
 import matwojcik.movies.util.Logger
 import org.apache.commons.codec.digest.DigestUtils
-import matwojcik.movies.util.BifunctorImplicits._
 
-class FilmwebClient[F[+_,+_]: Sync: Bracket](config: FilmwebConfig, sttpBackend: SttpBackend[F[Throwable, ?], Nothing]) {
-  private val ThrowableToClientError: Throwable => ClientError = new UnexpectedError(_)
+class FilmwebClient[F[+_, +_]: Sync: Bracket](config: FilmwebConfig, sttpBackend: SttpBackend[F[Throwable, ?], Nothing]) {
   private val logger = Logger.getLogger[F, ClientError](ThrowableToClientError)
 
   def executeMethod[A: Decoder](methodName: String, params: List[String]): F[ClientError, A] = {
@@ -68,11 +67,16 @@ object FilmwebClient {
   val ApiVersion = "1.0"
 
   sealed trait ClientError extends Throwable
+
+  object ClientError {
+    val ThrowableToClientError: Throwable => ClientError = new UnexpectedError(_)
+  }
+
   class UnexpectedError(cause: Throwable) extends RuntimeException(cause) with ClientError
+
   trait Decoder[A] {
     def decode(v: Vector[Json]): Either[DecodingFailure, A]
   }
-
 
   object Decoder {
     def apply[A](implicit ev: Decoder[A]): Decoder[A] = ev

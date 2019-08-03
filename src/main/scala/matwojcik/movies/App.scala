@@ -2,8 +2,11 @@ package matwojcik.movies
 
 import java.util.concurrent.Executors
 
+import au.id.tmm.bfect.catsinterop._
+import au.id.tmm.bfect.effects
+import au.id.tmm.bfect.effects.Bracket
+import au.id.tmm.bfect.ziointerop._
 import cats.Parallel
-import cats.effect.Async
 import cats.effect.ConcurrentEffect
 import cats.effect.ContextShift
 import cats.effect.Resource
@@ -13,11 +16,10 @@ import cats.syntax.all._
 import com.softwaremill.sttp.SttpBackend
 import com.softwaremill.sttp.asynchttpclient.cats.AsyncHttpClientCatsBackend
 import com.typesafe.scalalogging.StrictLogging
-import io.chrisdavenport.log4cats.Logger
-import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import matwojcik.movies.config.Config
 import matwojcik.movies.filmweb.Filmweb
 import matwojcik.movies.filmweb.FilmwebClient
+import matwojcik.movies.filmweb.FilmwebClient.ClientError
 import matwojcik.movies.mailing.Mails
 import matwojcik.movies.recommendation.RecommendationRouter
 import matwojcik.movies.recommendation.RecommendationSender
@@ -29,40 +31,57 @@ import org.http4s.server.Router
 import org.http4s.server.Server
 import org.http4s.server.blaze.BlazeServerBuilder
 import pureconfig.loadConfigOrThrow
-import zio.interop.ParIO
-import zio.interop.catz._
-import zio.interop.catz.implicits._
-import zio.DefaultRuntime
-import zio.Task
+import scalaz.zio.interop.ParIO
+import scalaz.zio.interop.catz._
+import scalaz.zio.DefaultRuntime
+import scalaz.zio.ZIO
 
 import scala.concurrent.ExecutionContext
 
-object App extends zio.App with StrictLogging {
+object App extends scalaz.zio.App with StrictLogging {
 
   implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newCachedThreadPool())
-  implicit def unsafeLogger[F[_]: Sync]: Logger[F] = Slf4jLogger.getLogger[F]
-  implicit val runtime: zio.Runtime[Environment] = new DefaultRuntime {}
+  implicit val runtime: scalaz.zio.Runtime[Environment] = new DefaultRuntime {}
 
-  override def run(args: List[String]) = program[Task, ParIO[Any, Throwable, ?]].fold(_ => 1, _ => 0)
+  type Effect[F[+_, +_], A] = F[Throwable, A]
 
-  def program[F[_]: Async: ConcurrentEffect: Timer: ContextShift, G[_]](implicit P: Parallel[F, G]): F[Unit] =
-    appResource[F, G].use(_ => Async[F].never[Unit])
+  override def run(args: List[String]) =
+    program[ZIO[Any, +?, +?], ParIO[Any, +?, +?]].fold(_ => 1, _ => 0)
 
-  private def appResource[F[_]: Sync: ConcurrentEffect: Timer: ContextShift, G[_]](implicit P: Parallel[F, G]): Resource[F, Unit] =
+  def program[F[+_, +_]: effects.Async: Bracket: effects.Timer, G[+_, +_]](
+    implicit P: Parallel[F[ClientError, ?], G[ClientError, ?]],
+    CE: ConcurrentEffect[Effect[F, ?]],
+    CS: ContextShift[Effect[F, ?]]
+  ): F[Throwable, Unit] =
+    appResource[F, G].use(_ => effects.Async[F].never)
+
+  private def appResource[F[+_, +_]: effects.Sync: Bracket: effects.Timer, G[+_, +_]](
+    implicit P: Parallel[F[ClientError, ?], G[ClientError, ?]],
+    CE: ConcurrentEffect[Effect[F, ?]],
+    CS: ContextShift[Effect[F, ?]]
+  ): Resource[Effect[F, ?], Unit] =
     for {
-      sttpBackend               <- Resource.make(Sync[F].delay(AsyncHttpClientCatsBackend[F]()))(backend => Sync[F].delay(backend.close()))
-      implicit0(config: Config) <- Resource.liftF(Sync[F].delay(loadConfigOrThrow[Config]))
-      service                   <- Resource.liftF(service(sttpBackend))
-      _                         <- server[F](service)
+      sttpBackend <- Resource.make[Effect[F, ?], SttpBackend[Effect[F, ?], Nothing]](
+        effects.Sync[F].syncThrowable(AsyncHttpClientCatsBackend[Effect[F, ?]]())
+      )(backend => effects.Sync[F].syncThrowable(backend.close()))
+      implicit0(config: Config) <- Resource.liftF(effects.Sync[F].syncThrowable(loadConfigOrThrow[Config]))
+      service                   <- Resource.liftF(service[F, G](sttpBackend))
+      _                         <- server[Effect[F, ?]](service)
     } yield ()
 
-  private def service[F[_]: Sync, G[_]](sttpBackend: SttpBackend[F, Nothing])(implicit P: Parallel[F, G], config: Config) =
+  private def service[F[+_, +_]: effects.Sync: effects.Bracket, G[+_, +_]](
+    sttpBackend: SttpBackend[Effect[F, ?], Nothing]
+  )(implicit P: Parallel[F[ClientError, ?], G[ClientError, ?]],
+    config: Config
+  ) =
     for {
-      implicit0(filmweb: Filmweb[F])                     <- Filmweb.instance[F](new FilmwebClient[F](config.filmweb, sttpBackend)).pure[F]
-      implicit0(mails: Mails[F])                         <- Mails.instance[F](config.mail).pure[F]
-      implicit0(recommendations: Recommendations[F])     <- Recommendations.instance[F, G].pure[F]
-      implicit0(templating: RecommendationTemplating[F]) <- RecommendationTemplating.instance[F].pure[F]
-      implicit0(sender: RecommendationSender[F])         <- RecommendationSender.instance[F](config.mail).pure[F]
+      implicit0(filmweb: Filmweb[F]) <- effects
+        .Sync[F]
+        .syncThrowable(Filmweb.instance[F](new FilmwebClient[F](config.filmweb, sttpBackend)))
+      implicit0(mails: Mails[F])                         <- effects.Sync[F].pure(Mails.instance[F](config.mail))
+      implicit0(recommendations: Recommendations[F])     <- effects.Sync[F].pure(Recommendations.instance[F, G])
+      implicit0(templating: RecommendationTemplating[F]) <- effects.Sync[F].pure(RecommendationTemplating.instance[F])
+      implicit0(sender: RecommendationSender[F])         <- effects.Sync[F].pure(RecommendationSender.instance[F](config.mail))
     } yield new MoviesRouter[F].service <+> new RecommendationRouter[F].service
 
   private def server[F[_]: Sync: ConcurrentEffect: Timer](routes: HttpRoutes[F])(implicit config: Config): Resource[F, Server[F]] =

@@ -3,12 +3,11 @@ package matwojcik.movies.util
 import au.id.tmm.bfect.effects._
 import cats.~>
 import au.id.tmm.bfect.effects.Die._
-import au.id.tmm.bfect.catsinterop._
 
 object BifunctorImplicits {
 
-  implicit class RefineErrors[F[+_,+_]: Sync, A](fa: F[Throwable, A]) {
-    def refineError[E](throwableToE: Throwable => E): F[E,A] =
+  implicit class RefineErrors[F[+_,+_]: Sync, E <: Throwable, A](fa: F[E, A]) {
+    def refineError[E2](throwableToE: E => E2): F[E2,A] =
       fa.refineOrDie{
         case failure => throwableToE(failure)
       }
