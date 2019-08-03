@@ -53,6 +53,9 @@ lazy val dependencies = {
   val zio = Seq(
     "dev.zio" %% "zio" % "1.0.0-RC10-1",
     "dev.zio" %% "zio-interop-cats" % "1.3.1.0-RC3",
+    "au.id.tmm.bfect" %% "bfect-core" % "0.0.5",
+    "au.id.tmm.bfect" %% "bfect-interop-cats" % "0.0.5",
+    "au.id.tmm.bfect" %% "bfect-interop-zio" % "0.0.5",
   )
 
   val config = Seq(
