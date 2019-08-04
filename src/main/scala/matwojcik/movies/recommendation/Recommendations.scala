@@ -2,36 +2,43 @@ package matwojcik.movies.recommendation
 
 import java.time.LocalDate
 
-import cats.Parallel
-import cats.effect.Sync
+import au.id.tmm.bfect.catsinterop._
+import au.id.tmm.bfect.effects.Sync._
+import au.id.tmm.bfect.effects.Bracket
+import au.id.tmm.bfect.effects.Sync
 import cats.instances.all._
 import cats.syntax.all._
-import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
+import matwojcik.movies.bfect.BifunctorParallel
+import matwojcik.movies.bfect.implicits._
 import matwojcik.movies.filmweb.Filmweb
+import matwojcik.movies.filmweb.FilmwebClient.ClientError
 import matwojcik.movies.filmweb.domain.Channel
 import matwojcik.movies.filmweb.domain.TvSchedule
 import matwojcik.movies.recommendation.domain.Recommendation
+import matwojcik.movies.util.Logger
 
-trait Recommendations[F[_]] {
-  def findRecommendationsOnChannel(channelId: Channel.Id, date: LocalDate): F[List[Recommendation]]
-  def findRecommendations(date: LocalDate): F[List[Recommendation]]
+trait Recommendations[F[+_, +_]] {
+  def findRecommendationsOnChannel(channelId: Channel.Id, date: LocalDate): F[ClientError, List[Recommendation]]
+  def findRecommendations(date: LocalDate): F[ClientError, List[Recommendation]]
 }
 
 object Recommendations {
-  def apply[F[_]](implicit ev: Recommendations[F]): Recommendations[F] = ev
+  def apply[F[+_, +_]](implicit ev: Recommendations[F]): Recommendations[F] = ev
 
-  def instance[F[_]: Sync: Filmweb, G[_]](implicit P: Parallel[F, G]) = new Recommendations[F] {
+  def instance[F[+_, +_]: Sync: Bracket: Filmweb, G[+_, +_]](
+    implicit P: BifunctorParallel[F, G]
+  ): Recommendations[F] = new Recommendations[F] {
 
-    private val logger = Slf4jLogger.getLogger[F]
+    private val logger = Logger.getLogger[F, ClientError](ClientError.apply)
 
-    override def findRecommendationsOnChannel(channelId: Channel.Id, date: LocalDate): F[List[Recommendation]] =
+    override def findRecommendationsOnChannel(channelId: Channel.Id, date: LocalDate): F[ClientError, List[Recommendation]] =
       for {
         channels <- Filmweb[F].findAllChannels()
         channel = channels.find(_.id == channelId)
-        recommendations <- channel.map(findRecommendationsOnChannel(_, date)).getOrElse(List.empty[Recommendation].pure[F])
+        recommendations <- channel.map(findRecommendationsOnChannel(_, date)).getOrElse(Sync[F].pure(List.empty[Recommendation]))
       } yield recommendations
 
-    private def findRecommendationsOnChannel(channel: Channel, date: LocalDate): F[List[Recommendation]] =
+    private def findRecommendationsOnChannel(channel: Channel, date: LocalDate): F[ClientError, List[Recommendation]] =
       for {
         schedule <- Filmweb[F].findTvSchedule(channel.id, date)
         movies = filterMovies(schedule)
@@ -51,7 +58,7 @@ object Recommendations {
     private def notTvShows(program: TvSchedule) =
       List("serial", "magazyn", "program").forall(w => !program.description.exists(_.contains(w)))
 
-    override def findRecommendations(date: LocalDate): F[List[Recommendation]] =
+    override def findRecommendations(date: LocalDate): F[ClientError, List[Recommendation]] =
       for {
         channels        <- findChannelsOfUser
         recommendations <- channels.parTraverse(findRecommendationsOnChannel(_, date)).map(_.flatten)

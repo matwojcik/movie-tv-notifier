@@ -1,44 +1,43 @@
 package matwojcik.movies.filmweb
 
 import java.net.URL
-import java.time.format.DateTimeFormatter
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.Year
+import java.time.format.DateTimeFormatter
 
-import cats.effect.Sync
 import cats.instances.all._
 import cats.syntax.all._
 import io.circe.Decoder
 import io.circe.Json
-import matwojcik.movies.filmweb.FilmwebClient.Decoder.DecodingFailure
+import matwojcik.movies.filmweb.FilmwebClient.{ClientError, DecodingFailure}
 import matwojcik.movies.filmweb.domain.Channel
 import matwojcik.movies.filmweb.domain.Movie
 import matwojcik.movies.filmweb.domain.TvSchedule
 
 import scala.util.Try
 
-trait Filmweb[F[_]] {
-  def findMovie(id: Movie.Id): F[Movie]
-  def findTvSchedule(id: Channel.Id, date: LocalDate): F[List[TvSchedule]]
-  def findAllChannels(): F[List[Channel]]
+trait Filmweb[F[+_, +_]] {
+  def findMovie(id: Movie.Id): F[ClientError, Movie]
+  def findTvSchedule(id: Channel.Id, date: LocalDate): F[ClientError, List[TvSchedule]]
+  def findAllChannels(): F[ClientError, List[Channel]]
 }
 
 object Filmweb {
-  def apply[F[_]](implicit ev: Filmweb[F]): Filmweb[F] = ev
+  def apply[F[+_, +_]](implicit ev: Filmweb[F]): Filmweb[F] = ev
 
-  def instance[F[_]: Sync](client: FilmwebClient[F]): Filmweb[F] = new Filmweb[F] {
+  def instance[F[+_, +_]](client: FilmwebClient[F]): Filmweb[F] = new Filmweb[F] {
 
-    override def findMovie(id: Movie.Id): F[Movie] =
+    override def findMovie(id: Movie.Id): F[ClientError, Movie] =
       client.executeMethod[Movie]("getFilmInfoFull", List(id.value.toString))
 
-    override def findTvSchedule(id: Channel.Id, localDate: LocalDate): F[List[TvSchedule]] = {
+    override def findTvSchedule(id: Channel.Id, localDate: LocalDate): F[ClientError, List[TvSchedule]] = {
       implicit val decoder: FilmwebClient.Decoder[List[TvSchedule]] = schedulesDecoder(localDate)
       client.executeMethod[List[TvSchedule]]("getTvSchedule", List(id.value.toString, localDate.format(DateTimeFormatter.ISO_DATE)))
     }
 
-    override def findAllChannels(): F[List[Channel]] =
+    override def findAllChannels(): F[ClientError, List[Channel]] =
       client.executeMethod[List[Channel]]("getAllChannels", List("\"\""))
 
     implicit val movieDecoder: FilmwebClient.Decoder[Movie] = (v: Vector[Json]) => {
@@ -48,7 +47,7 @@ object Filmweb {
       val plot = parse[Option[String]](v)(19)
       val year = parse[Int](v)(5).map(Year.of)
       val url = parse[Option[String]](v)(8).map(_.map(_.replace("/discussion", "")).map(new URL(_)))
-      val poster = parse[Option[String]](v)(11).map(_.map("http://1.fwcdn.pl/po" + _).map(new URL(_)))
+      val poster = parse[Option[String]](v)(11).map(_.map("http://1.fwcdn.pl/po" +_).map(new URL(_)))
       (title, year, plot, rating, voteCount, url, poster).mapN {
         case values =>
           (Movie.apply _).tupled(values)
@@ -103,6 +102,6 @@ object Filmweb {
       Try(v(index)).map(_.as[A]).toEither.flatten
 
     private def decodingFailure[A](name: String, v: Vector[Json])(cause: Throwable) =
-      new DecodingFailure(s"Error during parsing $name from $v", cause)
+      DecodingFailure(s"Error during parsing $name from $v", cause)
   }
 }

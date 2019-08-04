@@ -3,24 +3,23 @@ package matwojcik.movies.recommendation
 import java.time.LocalDateTime
 import java.time.ZoneId
 
-import cats.Applicative
-import cats.syntax.all._
+import au.id.tmm.bfect.BifunctorMonad
 import matwojcik.movies.filmweb.domain.Movie
 import matwojcik.movies.recommendation.domain.Recommendation
 import scalatags.Text.all._
 
-trait RecommendationTemplating[F[_]] {
-  def build(recommendations: List[Recommendation]): F[String]
+trait RecommendationTemplating[F[+_,+_]] {
+  def build(recommendations: List[Recommendation]): F[Nothing, String]
 }
 
 object RecommendationTemplating {
-  def apply[F[_]](implicit ev: RecommendationTemplating[F]): RecommendationTemplating[F] = ev
+  def apply[F[+_,+_]](implicit ev: RecommendationTemplating[F]): RecommendationTemplating[F] = ev
 
-  def instance[F[_]: Applicative]: RecommendationTemplating[F] = new RecommendationTemplating[F] {
+  def instance[F[+_,+_]: BifunctorMonad]: RecommendationTemplating[F] = new RecommendationTemplating[F] {
 
     implicit val dateOrdering: Ordering[LocalDateTime] = Ordering.by(_.atZone(ZoneId.systemDefault()).toInstant.toEpochMilli)
 
-    override def build(recommendations: List[Recommendation]): F[String] = {
+    override def build(recommendations: List[Recommendation]): F[Nothing, String] = BifunctorMonad[F].pure {
       val (topMovies, rest) = recommendations.sortBy(-_.movie.rating).splitAt(5)
       val recommendationsInOrderOfTime = rest.sortBy(_.date)
 
@@ -66,7 +65,7 @@ object RecommendationTemplating {
           div(id := "movies", h2("Others"), recommendationsInOrderOfTime.map(movieTemplate))
         )
       ).toString()
-    }.pure[F]
+    }
 
     private def movieTemplate(recommendation: domain.Recommendation) = recommendation match {
       case Recommendation(movie, channel, date) =>

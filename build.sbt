@@ -50,6 +50,14 @@ lazy val dependencies = {
     "org.typelevel" %% "cats-tagless-macros" % "0.8"
   )
 
+  val zio = Seq(
+    "org.scalaz" %% "scalaz-zio" % "1.0-RC4",
+    "org.scalaz" %% "scalaz-zio-interop-cats" % "1.0-RC4",
+    "au.id.tmm.bfect" %% "bfect-core" % "0.0.5",
+    "au.id.tmm.bfect" %% "bfect-interop-cats" % "0.0.5",
+    "au.id.tmm.bfect" %% "bfect-interop-zio" % "0.0.5",
+  )
+
   val config = Seq(
     "com.github.pureconfig" %% "pureconfig" % "0.9.1",
   )
@@ -71,7 +79,6 @@ lazy val dependencies = {
   val sttp = Seq(
     "com.softwaremill.sttp" %% "core" % SttpVersion,
     "com.softwaremill.sttp" %% "cats" % SttpVersion,
-    "com.softwaremill.sttp" %% "async-http-client-backend-zio" % SttpVersion,
     "com.softwaremill.sttp" %% "async-http-client-backend-cats" % SttpVersion,
   )
 
@@ -87,7 +94,7 @@ lazy val dependencies = {
   )
 
   Seq(
-    libraryDependencies ++= cats ++ config ++ logging ++ http4s ++ sttp ++ others ++ circe
+    libraryDependencies ++= cats ++ config ++ logging ++ http4s ++ sttp ++ others ++ circe ++ zio
   )
 }
 
