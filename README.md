@@ -5,4 +5,4 @@ Tech stack:
 * `cats-effect`
 * `bfect`
 * `ZIO`
-* `http4sxs`
+* `http4s`
