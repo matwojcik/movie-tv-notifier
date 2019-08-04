@@ -11,8 +11,7 @@ import cats.instances.all._
 import cats.syntax.all._
 import io.circe.Decoder
 import io.circe.Json
-import matwojcik.movies.filmweb.FilmwebClient.ClientError
-import matwojcik.movies.filmweb.FilmwebClient.Decoder.DecodingFailure
+import matwojcik.movies.filmweb.FilmwebClient.{ClientError, DecodingFailure}
 import matwojcik.movies.filmweb.domain.Channel
 import matwojcik.movies.filmweb.domain.Movie
 import matwojcik.movies.filmweb.domain.TvSchedule
@@ -103,6 +102,6 @@ object Filmweb {
       Try(v(index)).map(_.as[A]).toEither.flatten
 
     private def decodingFailure[A](name: String, v: Vector[Json])(cause: Throwable) =
-      new DecodingFailure(s"Error during parsing $name from $v", cause)
+      DecodingFailure(s"Error during parsing $name from $v", cause)
   }
 }

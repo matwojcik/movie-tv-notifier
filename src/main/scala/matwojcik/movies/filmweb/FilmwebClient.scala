@@ -8,17 +8,15 @@ import cats.syntax.all._
 import com.softwaremill.sttp.SttpBackend
 import com.softwaremill.sttp._
 import io.circe.Json
-import matwojcik.movies.filmweb.FilmwebClient.ClientError.ThrowableToClientError
-import matwojcik.movies.filmweb.FilmwebClient.Decoder.DecodingFailure
 import matwojcik.movies.filmweb.FilmwebClient.ClientError
 import matwojcik.movies.filmweb.FilmwebClient.Decoder
 import matwojcik.movies.filmweb.FilmwebClient.UnexpectedError
-import matwojcik.movies.util.BifunctorImplicits._
+import matwojcik.movies.bfect.implicits._
 import matwojcik.movies.util.Logger
 import org.apache.commons.codec.digest.DigestUtils
 
 class FilmwebClient[F[+_, +_]: Sync: Bracket](config: FilmwebConfig, sttpBackend: SttpBackend[F[Throwable, ?], Nothing]) {
-  private val logger = Logger.getLogger[F, ClientError](ThrowableToClientError)
+  private val logger = Logger.getLogger[F, ClientError](ClientError.apply)
 
   def executeMethod[A: Decoder](methodName: String, params: List[String]): F[ClientError, A] = {
     val methodWithParams = methodName + " [" + params.mkString(",") + "]\\n" // :o
@@ -28,7 +26,7 @@ class FilmwebClient[F[+_, +_]: Sync: Bracket](config: FilmwebConfig, sttpBackend
       uri"${config.baseUrl}?methods=$methodWithParams&signature=$signature&version=${FilmwebClient.ApiVersion}&appId=${FilmwebClient.AppId}"
 
     logger.debug(s"Calling $url") *>
-      sttpBackend.send(sttp.get(url)).refineError(ThrowableToClientError).flatMap {
+      sttpBackend.send(sttp.get(url)).refineError(ClientError.apply).flatMap {
         _.body match {
           case Left(failure) =>
             failWithReason(s"Failed call to Filmweb due to $failure")
@@ -59,7 +57,7 @@ class FilmwebClient[F[+_, +_]: Sync: Bracket](config: FilmwebConfig, sttpBackend
   }
 
   private def failWithReason[A](reason: String): F[ClientError, A] =
-    Sync[F].raiseError[ClientError](new UnexpectedError(new RuntimeException(reason)))
+    Sync[F].raiseError[ClientError](UnexpectedError(new RuntimeException(reason)))
 }
 
 object FilmwebClient {
@@ -67,12 +65,12 @@ object FilmwebClient {
   val ApiVersion = "1.0"
 
   sealed trait ClientError extends Throwable
+  case class UnexpectedError(cause: Throwable) extends ClientError
+  case class DecodingFailure(msg: String, cause: Throwable) extends ClientError
 
   object ClientError {
-    val ThrowableToClientError: Throwable => ClientError = new UnexpectedError(_)
+    def apply: Throwable => ClientError = UnexpectedError
   }
-
-  class UnexpectedError(cause: Throwable) extends RuntimeException(cause) with ClientError
 
   trait Decoder[A] {
     def decode(v: Vector[Json]): Either[DecodingFailure, A]
@@ -80,7 +78,6 @@ object FilmwebClient {
 
   object Decoder {
     def apply[A](implicit ev: Decoder[A]): Decoder[A] = ev
-    class DecodingFailure(msg: String, cause: Throwable) extends RuntimeException(msg, cause) with ClientError
   }
 
 }

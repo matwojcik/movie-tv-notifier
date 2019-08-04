@@ -6,9 +6,10 @@ import au.id.tmm.bfect.catsinterop._
 import au.id.tmm.bfect.effects.Sync._
 import au.id.tmm.bfect.effects.Bracket
 import au.id.tmm.bfect.effects.Sync
-import cats.Parallel
 import cats.instances.all._
 import cats.syntax.all._
+import matwojcik.movies.bfect.BifunctorParallel
+import matwojcik.movies.bfect.implicits._
 import matwojcik.movies.filmweb.Filmweb
 import matwojcik.movies.filmweb.FilmwebClient.ClientError
 import matwojcik.movies.filmweb.domain.Channel
@@ -25,10 +26,10 @@ object Recommendations {
   def apply[F[+_, +_]](implicit ev: Recommendations[F]): Recommendations[F] = ev
 
   def instance[F[+_, +_]: Sync: Bracket: Filmweb, G[+_, +_]](
-    implicit P: Parallel[F[ClientError, ?], G[ClientError, ?]]
+    implicit P: BifunctorParallel[F, G]
   ): Recommendations[F] = new Recommendations[F] {
 
-    private val logger = Logger.getLogger[F, ClientError](ClientError.ThrowableToClientError)
+    private val logger = Logger.getLogger[F, ClientError](ClientError.apply)
 
     override def findRecommendationsOnChannel(channelId: Channel.Id, date: LocalDate): F[ClientError, List[Recommendation]] =
       for {

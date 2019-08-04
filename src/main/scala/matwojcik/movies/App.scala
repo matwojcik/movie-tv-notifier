@@ -6,7 +6,6 @@ import au.id.tmm.bfect.catsinterop._
 import au.id.tmm.bfect.effects
 import au.id.tmm.bfect.effects.Bracket
 import au.id.tmm.bfect.ziointerop._
-import cats.Parallel
 import cats.effect.ConcurrentEffect
 import cats.effect.ContextShift
 import cats.effect.Resource
@@ -16,10 +15,10 @@ import cats.syntax.all._
 import com.softwaremill.sttp.SttpBackend
 import com.softwaremill.sttp.asynchttpclient.cats.AsyncHttpClientCatsBackend
 import com.typesafe.scalalogging.StrictLogging
+import matwojcik.movies.bfect.BifunctorParallel
 import matwojcik.movies.config.Config
 import matwojcik.movies.filmweb.Filmweb
 import matwojcik.movies.filmweb.FilmwebClient
-import matwojcik.movies.filmweb.FilmwebClient.ClientError
 import matwojcik.movies.mailing.Mails
 import matwojcik.movies.recommendation.RecommendationRouter
 import matwojcik.movies.recommendation.RecommendationSender
@@ -49,14 +48,14 @@ object App extends scalaz.zio.App with StrictLogging {
     program[ZIO[Any, +?, +?], ParIO[Any, +?, +?]].fold(_ => 1, _ => 0)
 
   def program[F[+_, +_]: effects.Async: Bracket: effects.Timer, G[+_, +_]](
-    implicit P: Parallel[F[ClientError, ?], G[ClientError, ?]],
+    implicit P: BifunctorParallel[F, G],
     CE: ConcurrentEffect[Effect[F, ?]],
     CS: ContextShift[Effect[F, ?]]
   ): F[Throwable, Unit] =
     appResource[F, G].use(_ => effects.Async[F].never)
 
   private def appResource[F[+_, +_]: effects.Sync: Bracket: effects.Timer, G[+_, +_]](
-    implicit P: Parallel[F[ClientError, ?], G[ClientError, ?]],
+    implicit P: BifunctorParallel[F, G],
     CE: ConcurrentEffect[Effect[F, ?]],
     CS: ContextShift[Effect[F, ?]]
   ): Resource[Effect[F, ?], Unit] =
@@ -71,7 +70,7 @@ object App extends scalaz.zio.App with StrictLogging {
 
   private def service[F[+_, +_]: effects.Sync: effects.Bracket, G[+_, +_]](
     sttpBackend: SttpBackend[Effect[F, ?], Nothing]
-  )(implicit P: Parallel[F[ClientError, ?], G[ClientError, ?]],
+  )(implicit P: BifunctorParallel[F, G],
     config: Config
   ) =
     for {
@@ -91,3 +90,4 @@ object App extends scalaz.zio.App with StrictLogging {
       .resource
 
 }
+

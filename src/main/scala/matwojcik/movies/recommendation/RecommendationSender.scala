@@ -9,7 +9,7 @@ import matwojcik.movies.config.MailConfig
 import matwojcik.movies.filmweb.FilmwebClient
 import matwojcik.movies.mailing.Mails
 import matwojcik.movies.recommendation.RecommendationSender.RecommendationSenderFailure
-import matwojcik.movies.util.BifunctorImplicits._
+import matwojcik.movies.bfect.implicits._
 import matwojcik.movies.util.Logger
 
 trait RecommendationSender[F[+_, +_]] {
@@ -34,7 +34,6 @@ object RecommendationSender {
     }
 
   sealed trait RecommendationSenderFailure extends Throwable
-
   case class ClientError(cause: FilmwebClient.ClientError) extends RecommendationSenderFailure
   case class MailingError(cause: Mails.MailingError) extends RecommendationSenderFailure
   case class UnknownError(cause: Throwable) extends RecommendationSenderFailure
