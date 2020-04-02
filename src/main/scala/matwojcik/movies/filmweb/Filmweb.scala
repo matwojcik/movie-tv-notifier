@@ -11,7 +11,8 @@ import cats.instances.all._
 import cats.syntax.all._
 import io.circe.Decoder
 import io.circe.Json
-import matwojcik.movies.filmweb.FilmwebClient.{ClientError, DecodingFailure}
+import matwojcik.movies.filmweb.FilmwebClient.ClientError
+import matwojcik.movies.filmweb.FilmwebClient.DecodingFailure
 import matwojcik.movies.filmweb.domain.Channel
 import matwojcik.movies.filmweb.domain.Movie
 import matwojcik.movies.filmweb.domain.TvSchedule
@@ -38,7 +39,7 @@ object Filmweb {
     }
 
     override def findAllChannels(): F[ClientError, List[Channel]] =
-      client.executeMethod[List[Channel]]("getAllChannels", List("\"\""))
+      client.executeMethod[List[Channel]]("getAllChannels", List("100")) // WTF why 100
 
     implicit val movieDecoder: FilmwebClient.Decoder[Movie] = (v: Vector[Json]) => {
       val title = parse[String](v)(0)
@@ -47,20 +48,23 @@ object Filmweb {
       val plot = parse[Option[String]](v)(19)
       val year = parse[Int](v)(5).map(Year.of)
       val url = parse[Option[String]](v)(8).map(_.map(_.replace("/discussion", "")).map(new URL(_)))
-      val poster = parse[Option[String]](v)(11).map(_.map("http://1.fwcdn.pl/po" +_).map(new URL(_)))
-      (title, year, plot, rating, voteCount, url, poster).mapN {
-        case values =>
-          (Movie.apply _).tupled(values)
-      }.leftMap(decodingFailure("movie", v))
+      val poster = parse[Option[String]](v)(11).map(_.map("http://1.fwcdn.pl/po" + _).map(new URL(_)))
+      (title, year, plot, rating, voteCount, url, poster)
+        .mapN {
+          case values =>
+            (Movie.apply _).tupled(values)
+        }
+        .leftMap(decodingFailure("movie", v))
     }
 
     implicit def schedulesDecoder(date: LocalDate): FilmwebClient.Decoder[List[TvSchedule]] =
       (v: Vector[Json]) =>
         v.traverse {
-          _.asArray
-            .map(parseSchedule(date))
-            .getOrElse(Left(decodingFailure("schedules", v)(new RuntimeException("Schedules not an array"))))
-        }.map(_.toList)
+            _.asArray
+              .map(parseSchedule(date))
+              .getOrElse(Left(decodingFailure("schedules", v)(new RuntimeException("Schedules not an array"))))
+          }
+          .map(_.toList)
 
     private def parseSchedule(date: LocalDate)(v: Vector[Json]): Either[DecodingFailure, TvSchedule] = {
       val title = parse[String](v)(1)
@@ -73,29 +77,35 @@ object Filmweb {
       }
       val id = parse[Option[Int]](v)(5).map(_.map(Movie.Id))
 
-      (id, title, description, start).mapN {
-        case values => (TvSchedule.apply _).tupled(values)
-      }.leftMap(decodingFailure("schedule", v))
+      (id, title, description, start)
+        .mapN {
+          case values => (TvSchedule.apply _).tupled(values)
+        }
+        .leftMap(decodingFailure("schedule", v))
 
     }
 
     implicit val channelsDecoder: FilmwebClient.Decoder[List[Channel]] = (v: Vector[Json]) =>
       v match {
         case head +: tail =>
-          tail.traverse { v3 =>
-            v3.asArray.map(parseChannel).getOrElse(Left(decodingFailure("channels", v)(new RuntimeException("Channels not an array"))))
-          }.map(_.toList)
+          tail
+            .traverse { v3 =>
+              v3.asArray.map(parseChannel).getOrElse(Left(decodingFailure("channels", v)(new RuntimeException("Channels not an array"))))
+            }
+            .map(_.toList)
         case _ =>
           Left(decodingFailure("channels", v)(new RuntimeException("Channels list didn't have enough elements")))
-    }
+      }
 
     private def parseChannel(v: Vector[Json]): Either[DecodingFailure, Channel] = {
       val id = parse[Int](v)(0).map(Channel.Id)
       val name = parse[String](v)(1)
-      (id, name).mapN {
-        case values =>
-          (Channel.apply _).tupled(values)
-      }.leftMap(decodingFailure("channel", v))
+      (id, name)
+        .mapN {
+          case values =>
+            (Channel.apply _).tupled(values)
+        }
+        .leftMap(decodingFailure("channel", v))
     }
 
     private def parse[A: Decoder](v: Vector[Json])(index: Int) =
